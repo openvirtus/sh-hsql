@@ -186,6 +186,7 @@ hsql_psql_new_database() {
 hsql_psql_allow_user() {
     local db="$1" user="$2"
     hsql_psql_exec "grant all privileges on database ${db} to ${user};" || true
+    hsql_psql_exec "ALTER DATABASE ${db} OWNER TO ${user};" || true
 }
 hsql_psql_list_databases() {
     hsql_psql_exec "\\l"
