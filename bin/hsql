@@ -55,8 +55,11 @@
 #h:    -b DATABASE        : Backup.
 #h:    -r DATABASE        : Remove.
 #r:
-. hutil
+. hlog
 . hcfg
+. hstr
+. hterm
+. hcompat
 hsql() {
     ## Parse command line arguments.
     local OPTIND optopt= ops= user= pass= newdbs= allows= d= u= database=
@@ -69,12 +72,12 @@ hsql() {
                      psql)  hsql_calc_variables "${HSQL_PSQL_URL}"  ;;
                  esac
                  if test ! @"${HSQL_URL_PROTOCOL}" = @"${OPTARG}";then
-                     hutil fatal "Database of type ${OPTARG} not defined."
+                     hlog fatal "Database of type ${OPTARG} not defined."
                  fi
                     
                  ;;
-            u)   local user="`hutil optopt "${OPTARG}"`"
-                 local pass="`hutil optarg "${OPTARG}"`"
+            u)   local user="`hstr optopt "${OPTARG}"`"
+                 local pass="`hstr optarg "${OPTARG}"`"
                  ;;
             a)   local allows="${allows} ${OPTARG}" ;;
             d)   local newdbs="${newdbs} ${OPTARG}" ;;
@@ -97,7 +100,7 @@ hsql() {
     case "${ops}" in *c*) hsql_"${HSQL_URL_PROTOCOL}"_exec "$*"      ;; esac
     case "${ops}" in *l*) hsql_"${HSQL_URL_PROTOCOL}"_list_databases ;; esac
     case "${ops}" in
-        *b*) hutil errif "Please specify a database." test ! -n "${database}"
+        *b*) test -n "${database}" || hlog fatal "Please specify a database." 
              hsql_"${HSQL_URL_PROTOCOL}"_dump_database "${database}"
              ;;
         *r*) hsql_"${HSQL_URL_PROTOCOL}"_drop_database "${database}"
@@ -147,7 +150,7 @@ hsql_calc_variables() {
                local def_host=127.0.0.1
                local def_port=3306
                ;;
-        *)    hutil fatal "Protocol '${HSQL_URL_PROTOCOL}' unsupported.";;
+        *)    hlog fatal "Protocol '${HSQL_URL_PROTOCOL}' unsupported.";;
     esac
     HSQL_URL_USERNAME="${HSQL_URL_USERNAME:-${def_username}}"
     HSQL_URL_DATABASE="${HSQL_URL_DATABASE:-${def_database}}"
@@ -181,7 +184,7 @@ hsql_psql_exec() {
         "${HSQL_URL_DATABASE}"
 }
 hsql_psql_useradd() {
-    local user="$1" pass="${2:-`hutil hidden 'Please specify a password> '`}"
+    local user="$1" pass="${2:-`hterm hidden 'Please specify a password> '`}"
     hsql_psql_exec "CREATE USER ${user};" || true
     hsql_psql_exec "alter user ${user} with password '${pass}';"
 }
@@ -235,8 +238,8 @@ hsql_mysql_exec() {
     echo "${cmd}" | hsql_mysql_interactive
 }
 hsql_mysql_useradd() {
-    local user="$1" pass="${2:-`hutil hidden 'Please specify a password> '`}"
-    if hutil has void;then
+    local user="$1" pass="${2:-`hterm hidden 'Please specify a password> '`}"
+    if hcompat has void;then
         hsql_mysql_exec "CREATE USER IF NOT EXISTS '${user}'@'%' IDENTIFIED BY '${pass}';
                          SET PASSWORD FOR '${user}'@'%' =  PASSWORD('${pass}');"
     else
@@ -247,12 +250,12 @@ hsql_mysql_useradd() {
 }
 hsql_mysql_new_database() {
     local db="$1"
-    hutil info "Creating database ${db} if does not exist ..."
+    hlog info "Creating database ${db} if does not exist ..."
     hsql_mysql_exec "CREATE DATABASE IF NOT EXISTS ${db};"
 }
 hsql_mysql_allow_user() {
     local db="$1" user="$2"
-    hutil info "Allowing user ${user} to database ${db} ..."
+    hlog info "Allowing user ${user} to database ${db} ..."
     hsql_mysql_exec "GRANT ALL privileges ON \`${db}\`.* TO '${user}'@'%';
                      FLUSH PRIVILEGES;"
 }
@@ -268,7 +271,7 @@ hsql_mysql_dump_database() {
         --databases "${1}"
 }
 hsql_mysql_drop_database() {
-    hutil info "Deleting ${1} database ..."
+    hlog info "Deleting ${1} database ..."
     hsql_mysql_exec "DROP DATABASE IF EXISTS ${1};"
 }
 
@@ -281,6 +284,8 @@ if test @"`basename "$0"`" = @"hsql";then
     if test -n "$1";then
         hsql "$@"
     else
-        hutil help
+        sed -n 's/^ *#h: \{0,1\}//p' "$0" | sed "s|\\\$0|`basename $0`|g"
+        echo ""
+        sed -n 's/^ *#l: \{0,2\}//p' "$0"
    fi
 fi
