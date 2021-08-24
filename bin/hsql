@@ -42,6 +42,7 @@
 #h:
 #h:    -i         : Open interactive SQL terminal.
 #h:    -c COMMAND : Run SQL statement.
+#h:    -f FILE    : Run SQL file.
 #h:
 #h: Add users:
 #h:
@@ -63,7 +64,7 @@
 hsql() {
     ## Parse command line arguments.
     local OPTIND optopt= ops= user= pass= newdbs= allows= d= u= database=
-    while getopts "vU:S:icu:d:a:lb:r:" optopt;do # OPTARG
+    while getopts "vU:S:icu:d:a:lb:r:f" optopt;do # OPTARG
         local ops="${ops}${optopt}"
         case $optopt in
             U)   hsql_calc_variables "${OPTARG}";;
@@ -97,7 +98,14 @@ hsql() {
         done
     done
     case "${ops}" in *i*) hsql_"${HSQL_URL_PROTOCOL}"_interactive    ;; esac
-    case "${ops}" in *c*) hsql_"${HSQL_URL_PROTOCOL}"_exec "$*"      ;; esac
+    case "${ops}" in
+        *c*) hsql_"${HSQL_URL_PROTOCOL}"_exec "$*"
+             ;;
+        *f*) for f in "$@";do
+                 hsql_"${HSQL_URL_PROTOCOL}"_exec "`cat "$f"`"
+             done
+             ;;
+    esac
     case "${ops}" in *l*) hsql_"${HSQL_URL_PROTOCOL}"_list_databases ;; esac
     case "${ops}" in
         *b*) test -n "${database}" || hlog fatal "Please specify a database." 
@@ -166,22 +174,35 @@ hsql_psql_interactive() {
     if test -n "${HSQL_URL_PASSWORD}";then
         export PGPASSWORD="${HSQL_URL_PASSWORD}"
     fi
-    psql                          \
-        -U "${HSQL_URL_USERNAME}" \
-        -h "${HSQL_URL_HOST}"     \
-        -p "${HSQL_URL_PORT}"     \
-        "${HSQL_URL_DATABASE}"
+    if test @"${HSQL_URL_USERNAME}" = @"postgres" && \
+       test @"`whoami`"             = @"root"     && \
+       test @"${HSQL_URL_HOST}"     = @"127.0.0.1";then
+        hsql_sudo -u "postgres" psql "${HSQL_URL_DATABASE}"
+    else
+        psql                          \
+            -U "${HSQL_URL_USERNAME}" \
+            -h "${HSQL_URL_HOST}"     \
+            -p "${HSQL_URL_PORT}"     \
+            "${HSQL_URL_DATABASE}"
+    fi
 }
 hsql_psql_exec() {
     if test -n "${HSQL_URL_PASSWORD}";then
         export PGPASSWORD="${HSQL_URL_PASSWORD}"
     fi
     local cmd="$*"
-    echo "${cmd}" | psql -a       \
-        -U "${HSQL_URL_USERNAME}" \
-        -h "${HSQL_URL_HOST}"     \
-        -p "${HSQL_URL_PORT}"     \
-        "${HSQL_URL_DATABASE}"
+    if test @"${HSQL_URL_USERNAME}" = @"postgres" && \
+       test @"`whoami`"             = @"root"     && \
+       test @"${HSQL_URL_HOST}"     = @"127.0.0.1";then
+        echo "${cmd}" | hsql_sudo -u "postgres" psql -a "${HSQL_URL_DATABASE}"
+    else
+        echo "${cmd}" | psql -a       \
+                             -U "${HSQL_URL_USERNAME}" \
+                             -h "${HSQL_URL_HOST}"     \
+                             -p "${HSQL_URL_PORT}"     \
+                             "${HSQL_URL_DATABASE}"
+    fi
+    
 }
 hsql_psql_useradd() {
     local user="$1" pass="${2:-`hterm hidden 'Please specify a password> '`}"
@@ -274,7 +295,20 @@ hsql_mysql_drop_database() {
     hlog info "Deleting ${1} database ..."
     hsql_mysql_exec "DROP DATABASE IF EXISTS ${1};"
 }
-
+hsql_sudo() {
+    local pwd="`pwd`"
+    if test @"${pwd}" = @"root";then
+        cd /tmp
+    fi
+    if test -f /usr/bin/sudo;then
+        /usr/bin/sudo "$@"
+    elif test -f /usr/local/bin/sudo;then
+        /usr/local/bin/sudo "$@"
+    else
+        "`which sudo`" "$@"
+    fi
+    cd "`pwd`"
+}
 
 
 
